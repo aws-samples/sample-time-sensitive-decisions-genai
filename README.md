@@ -68,6 +68,10 @@ zip lambda_package.zip lambda_function.py
 Choose a Bedrock model. Prompt has been optimized and tested with Anthropic Claude Sonnet models 3.5+
 If choosing a different model family, such as Amazon Nova, be sure to test the prompt.
 
+### Note
+Running the Cloudformation requires 2 steps. After all resources are created modify the template to uncomment the ```NotificationConfiguration``` attribute of the ```DocumentInputBucket``` resource. See the Note in this document - 
+https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-s3-bucket-notificationconfiguration.html
+
 6. Upload a document to the input S3 bucket:
 ```bash
 aws s3 cp sample-document.pdf s3://DocumentInputBucketName/

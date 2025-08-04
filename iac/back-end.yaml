@@ -52,10 +52,11 @@ Resources:
         - !Ref AppName
         - "input"
         - !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: 's3:ObjectCreated:Put'
-            Function: !GetAtt TextractProcessorFunction.Arn
+      # Remove the NotificationConfiguration, create resources, then add notificatio update
+      # NotificationConfiguration:
+      #   LambdaConfigurations:
+      #     - Event: 's3:ObjectCreated:Put'
+      #       Function: !GetAtt TextractProcessorFunction.Arn
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders:
