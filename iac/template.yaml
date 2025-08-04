@@ -1,0 +1,285 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Legal Demand General Application
+  SAM Template for deploying the frontend and backend components
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    Description: Deployment stage
+    AllowedValues:
+      - dev
+      - test
+      - prod
+  AppName:
+    Type: String
+    Default: legal-demand-general
+    Description: Application name
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.12
+    MemorySize: 256
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+
+Resources:
+  # S3 Bucket for frontend hosting
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties: {}
+
+  # S3 Bucket for file uploads
+  # UploadBucket:
+  #   Type: AWS::S3::Bucket
+  #   Properties:
+  #     CorsConfiguration:
+  #       CorsRules:
+  #         - AllowedHeaders:
+  #             - '*'
+  #           AllowedMethods:
+  #             - GET
+  #             - PUT
+  #             - POST
+  #             - DELETE
+  #             - HEAD
+  #           AllowedOrigins:
+  #             - '*'
+  #           MaxAge: 3600
+
+  # CloudFront distribution for frontend
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !Sub "${FrontendBucket.RegionalDomainName}"
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}"
+          - DomainName: !Sub "${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com"
+            Id: ApiGatewayOrigin
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+        Enabled: true
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: ApiGatewayOrigin
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - POST
+              - PATCH
+              - DELETE
+            ForwardedValues:
+              QueryString: true
+              Headers:
+                - Authorization
+                - Content-Type
+              Cookies:
+                Forward: none
+            ViewerProtocolPolicy: https-only
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+  # CloudFront Origin Access Identity
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub "OAI for ${AWS::StackName}"
+
+  # S3 Bucket Policy for CloudFront
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:GetObject
+            Effect: Allow
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Principal:
+              CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: NONE
+
+  # Lambda function for retrieving records from DynamoDB
+  GetRecordsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/back-end/api-functions/
+      Handler: get_records.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: "candb-audit-table"
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: "candb-audit-table"
+      Events:
+        GetRecords:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/records
+            Method: get
+
+  # Lambda function for uploading files to S3
+  UploadFileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/back-end/api-functions/
+      Handler: upload_file.lambda_handler
+      Policies:
+        - S3WritePolicy:
+            BucketName: "372228100697-c-and-b-genai-demo-input"
+      Environment:
+        Variables:
+          UPLOAD_BUCKET: "372228100697-c-and-b-genai-demo-input"
+      Events:
+        UploadFile:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/upload
+            Method: post
+        GetPresignedUrl:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/upload
+            Method: get
+        UploadFileOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/upload
+            Method: options
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Join 
+      - "-"
+      - - !Ref AWS::AccountId
+        - !Ref AppName
+        - "cognitoUserPool"
+        - !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+      AutoVerifiedAttributes:
+      - email
+      UsernameAttributes:
+      - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      Schema:
+      - Name: email
+        AttributeDataType: String
+        Mutable: true
+        Required: true
+    Metadata:
+      SamResourceId: UserPool
+  
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Join 
+      - "-"
+      - - !Ref AWS::AccountId
+        - !Ref AppName
+        - "cognitoUserPoolClient"
+        - !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId]]]]
+      UserPoolId:
+        Ref: UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+      - ALLOW_USER_PASSWORD_AUTH
+      - ALLOW_REFRESH_TOKEN_AUTH
+      - ALLOW_ADMIN_USER_PASSWORD_AUTH
+      PreventUserExistenceErrors: ENABLED
+      AllowedOAuthFlowsUserPoolClient: true
+      SupportedIdentityProviders:
+      - COGNITO
+      CallbackURLs:
+      - Fn::Sub: https://${CloudFrontDistribution.DomainName}/index.html
+      LogoutURLs:
+      - Fn::Sub: https://${CloudFrontDistribution.DomainName}/login.html
+      AllowedOAuthFlows:
+      - implicit
+      AllowedOAuthScopes:
+      - email
+      - openid
+      - profile
+    Metadata:
+      SamResourceId: UserPoolClient
+
+  # DynamoDB Table
+  # DynamoDBTable:
+  #   Type: AWS::DynamoDB::Table
+  #   Properties:
+  #     BillingMode: PAY_PER_REQUEST
+  #     AttributeDefinitions:
+  #       - AttributeName: job_id
+  #         AttributeType: S
+  #       - AttributeName: result
+  #         AttributeType: S
+  #     KeySchema:
+  #       - AttributeName: job_id
+  #         KeyType: HASH
+  #     GlobalSecondaryIndexes:
+  #       - IndexName: ResultIndex
+  #         KeySchema:
+  #           - AttributeName: result
+  #             KeyType: HASH
+  #         Projection:
+  #           ProjectionType: ALL
+
+Outputs:
+  CloudFrontURL:
+    Description: URL of the CloudFront distribution
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+  
+  ApiGatewayURL:
+    Description: URL of the API Gateway
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+  
+  FrontendBucketName:
+    Description: Name of the S3 bucket for frontend hosting
+    Value: !Ref FrontendBucket

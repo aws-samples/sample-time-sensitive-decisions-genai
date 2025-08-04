@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Results Viewer - Login</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+        .login-container { max-width: 400px; margin: 100px auto; padding: 20px; background-color: white; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; margin-bottom: 30px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input { width: 100%; padding: 8px; font-size: 16px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+        button:hover { background-color: #45a049; }
+        .error { color: red; text-align: center; margin-top: 15px; }
+        .signup-link { text-align: center; margin-top: 15px; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.1/dist/amazon-cognito-identity.min.js"></script>
+    <script src="js/app.js"></script>
+</head>
+<body>
+    <div class="login-container">
+        <h1>Results Viewer</h1>
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required>
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <button id="login-button">Login</button>
+        <div id="error" class="error" style="display:none;"></div>
+        <div class="signup-link">
+            <a href="#" id="signup-link">Need an account? Sign up</a>
+        </div>
+    </div>
+
+    <script>
+        // Use configuration from config.js
+        const poolData = {
+            UserPoolId: poolData.userPoolId,
+            ClientId: poolData.clientId
+        };
+        
+        // Set the AWS region
+        AmazonCognitoIdentity.region = poolData.region;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if user is already authenticated
+            checkAuthentication();
+            
+            // Setup event listeners
+            document.getElementById('login-button').addEventListener('click', login);
+            document.getElementById('signup-link').addEventListener('click', function(e) {
+                e.preventDefault();
+                window.location.href = 'signup.html';
+            });
+        });
+
+        function checkAuthentication() {
+            const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+            const cognitoUser = userPool.getCurrentUser();
+            
+            if (cognitoUser != null) {
+                cognitoUser.getSession(function(err, session) {
+                    if (err) {
+                        console.error('Error getting session:', err);
+                        return;
+                    }
+                    
+                    if (session.isValid()) {
+                        // Redirect to main page if session is valid
+                        window.location.href = 'index.html';
+                    }
+                });
+            }
+        }
+
+        function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorElement = document.getElementById('error');
+            
+            if (!username || !password) {
+                errorElement.textContent = 'Please enter both username and password';
+                errorElement.style.display = 'block';
+                return;
+            }
+            
+            const authenticationData = {
+                Username: username,
+                Password: password
+            };
+            
+            const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails(authenticationData);
+            const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+            
+            const userData = {
+                Username: username,
+                Pool: userPool
+            };
+            
+            const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+            
+            // Use ADMIN_USER_PASSWORD_AUTH flow instead of USER_SRP_AUTH
+            cognitoUser.setAuthenticationFlowType('USER_PASSWORD_AUTH');
+            
+            cognitoUser.authenticateUser(authenticationDetails, {
+                onSuccess: function(result) {
+                    // Successfully logged in, redirect to main page
+                    window.location.href = 'index.html';
+                },
+                onFailure: function(err) {
+                    // Failed to authenticate
+                    errorElement.textContent = err.message || 'Failed to login. Please check your credentials.';
+                    errorElement.style.display = 'block';
+                    console.error('Authentication error:', err);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
