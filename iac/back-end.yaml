@@ -4,7 +4,7 @@ Description: 'CloudFormation template for Legal Demand Document Processing Syste
 Parameters:
   AppName:
     Type: String
-    Default: legal-demand-general
+    Default: time-sensitive-decisions
     Description: Application name
   
   AdminEmail:

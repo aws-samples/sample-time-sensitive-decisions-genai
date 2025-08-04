@@ -1,81 +1,118 @@
-# Legal Demand General Application
+# Document Urgency Analysis Pipeline with AWS Services
 
-A simple web application for managing legal demand documents. This application allows users to view records from DynamoDB and upload files to S3.
+This project implements an automated document processing pipeline which analyzes text documents to determine their urgency level using AWS services. It combines Amazon Textract for text extraction with Amazon Bedrock to provide intelligent document classification, helping organizations prioritize their document handling workflow.
 
-## Architecture
+The system processes documents uploaded to S3 through a two-stage pipeline. First, it extracts text content using Amazon Textract. Then, it analyzes the extracted text using AWS Bedrock to classify documents as either "urgent" or "routine" based on sophisticated content analysis rules. The results are stored in DynamoDB for audit purposes and notifications are sent via SNS for immediate action.
 
-- **Frontend**: Simple HTML, CSS, and JavaScript single page application
-- **Backend**: AWS Lambda functions (Python 3.12) with API Gateway
-- **Storage**: DynamoDB for document metadata, S3 for document storage
-- **Deployment**: AWS SAM (Serverless Application Model)
-- **CDN**: CloudFront for content delivery
+![alt text](image.png)
 
-## Prerequisites
-
-- AWS CLI installed and configured
-- AWS SAM CLI installed
-- Python 3.12
-
-## Project Structure
-
+## Repository Structure
 ```
-legal-demand-general/
-├── src/
-│   ├── front-end/           # Frontend code
-│   │   ├── css/             # CSS styles
-│   │   ├── js/              # JavaScript code
-│   │   ├── index.html       # Main HTML page
-│   │   └── error.html       # Error page
-│   └── back-end/            # Backend code
-│       ├── api-functions/   # Lambda functions for API
-│       ├── bedrock-processor/  # Existing Lambda function
-│       └── textract-processor/ # Existing Lambda function
-├── template.yaml            # SAM template
-└── README.md                # This file
+.
+└── src/
+      └── back-end
+            ├── textract-processor/          # Lambda function for text extraction
+                  ├── lambda_function.py       # Handles S3 events and initiates Textract jobs
+                  └── requirements.txt         # Python dependencies for Textract processing
+            └── bedrock-processor/           # Lambda function for LLM analysis
+                  ├── lambda_function.py       # Processes Textract output and calls Bedrock
+                  └── requirements.txt         # Python dependencies for Bedrock integration
 ```
 
-## Deployment Instructions
+## Usage Instructions
+### Prerequisites
+- AWS Account with appropriate permissions
+- Python 3.12 or later
+- AWS CLI configured with appropriate credentials
+- The following AWS services enabled:
+  - AWS Lambda
+  - Amazon S3
+  - Amazon Textract
+  - Amazon Bedrock with Anthropic Claude Sonnet 3.5+ access
+  - Amazon SNS
+  - Amazon DynamoDB
 
-1. **Build the SAM application**:
-
+### Installation
+1. Clone the repository:
 ```bash
-sam build
+git clone [repository-url]
+cd [repository-name]
 ```
 
-2. **Deploy the application**:
-
+2. Install required packages and .zip for Textract code Lambda deployment
 ```bash
-sam deploy --guided
+# Zip up packages and lambda code for deployment
+cd src/back-end/textract-processor
+pip install -r requirements.txt -t package
+cd package && zip -r ../lambda_package.zip . && cd ..
+zip lambda_package.zip lambda_function.py
 ```
 
-Follow the prompts to configure your deployment.
-
-3. **Update the frontend configuration**:
-
-After deployment, update the `apiBaseUrl` in `src/front-end/js/app.js` with the API Gateway URL from the deployment outputs.
-
-4. **Upload the frontend files to S3**:
-
+3. Install required packages and .zip for Bedrock code Lambda deployment
 ```bash
-aws s3 sync src/front-end/ s3://YOUR_FRONTEND_BUCKET_NAME/
+# Zip up packages and lambda code for deployment
+cd src/back-end/bedrock-processor
+pip install -r requirements.txt -t package
+cd package && zip -r ../package.zip . && cd ..
+zip lambda_package.zip lambda_function.py
 ```
 
-Replace `YOUR_FRONTEND_BUCKET_NAME` with the actual bucket name from the deployment outputs.
+4. Copy both zip files into an S3 bucket with seperate prefixes. Suggest the following structure
+```ascii
+└── S3CodeBucket/
+      ├── textract-processor/lambda_package.zip
+      └── bedrock-processor/lambda_packag.zip
+```
 
-## Features
+5. Upload and create a new Cloudformation Stack using /iac/back-end.yaml
+Choose a Bedrock model. Prompt has been optimized and tested with Anthropic Claude Sonnet models 3.5+
+If choosing a different model family, such as Amazon Nova, be sure to test the prompt.
 
-- View records from DynamoDB with pagination (10 records per page)
-- Filter records by job_id, result, or object name
-- Upload files to S3
-- Responsive design
+6. Upload a document to the input S3 bucket:
+```bash
+aws s3 cp sample-document.pdf s3://DocumentInputBucketName/
+```
 
-## API Endpoints
+6. Monitor the process through Lambda CloudWatch logs, SNS notification or the DynamoDB table
 
-- `GET /api/records` - Get records from DynamoDB with optional filtering
-- `POST /api/upload` - Upload a file to S3
+### Troubleshooting
+Common issues and solutions:
 
-## Security Considerations
+1. Textract Job Failures
+- Problem: Textract job fails to start
+- Solution: Check IAM roles and S3 bucket permissions
+```bash
+aws iam get-role --role-name TextractServiceRole
+```
 
-- CORS is enabled on the API Gateway to allow requests from the frontend
-- CloudFront is used to serve the frontend securely
-- S3 bucket policies restrict access to the frontend and upload buckets
+2. Bedrock Integration Issues
+- Problem: LLM analysis timeout
+- Solution: Increase Lambda timeout and memory
+- Location of logs: CloudWatch Logs `/aws/lambda/bedrock-processor`
+
+3. Missing Notifications
+- Problem: No SNS notifications received
+- Solution: Verify SNS topic subscriptions and permissions
+```bash
+aws sns list-subscriptions-by-topic --topic-arn <your-topic-arn>
+```
+
+## Data Flow
+The system processes documents through a serverless pipeline that extracts text and performs intelligent analysis to determine document urgency.
+
+```ascii
+[S3 Upload] -> [Textract Lambda] -> [Textract Service] -> [Bedrock Lambda] -> [Bedrock LLM]
+      |                                                           |
+      |                                                           v
+      +-----------------------------------------> [DynamoDB & SNS Notification]
+```
+
+Key Component Interactions:
+1. S3 event triggers Textract Lambda when new documents are uploaded
+2. Textract Lambda initiates asynchronous text extraction job
+3. Textract completion triggers Bedrock Lambda via SNS
+4. Bedrock Lambda retrieves extracted text and calls LLM for analysis
+5. Results are stored in DynamoDB and notifications sent via SNS
+6. Error handling and retries are managed at each step
+7. Monitoring and logging through CloudWatch
+8. Access control through IAM roles and policies
