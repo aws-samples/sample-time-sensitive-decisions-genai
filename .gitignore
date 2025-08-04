@@ -1,0 +1,14 @@
+wip/
+reference/
+src/*/*/*.zip
+src/*/*/event.json
+src/*/*/env.sh
+src/*/*/package
+src/front-end/*
+utils/
+iac/.aws-sam/*
+iac/samconfig.toml
+iac/front-end.yaml
+lambda_errors.log
+.gitignore
+.vscode
