@@ -42,18 +42,18 @@ cd [repository-name]
 2. Install required packages and .zip for Textract code Lambda deployment
 ```bash
 # Zip up packages and lambda code for deployment
-cd src/back-end/textract-processor
-pip install -r requirements.txt -t package
-cd package && zip -r ../lambda_package.zip . && cd ..
+cd src/back-end/textract-processor && \
+pip install -r requirements.txt -t package && \\
+cd package && zip -r ../lambda_package.zip . && cd .. && \
 zip lambda_package.zip lambda_function.py
 ```
 
 3. Install required packages and .zip for Bedrock code Lambda deployment
 ```bash
 # Zip up packages and lambda code for deployment
-cd src/back-end/bedrock-processor
-pip install -r requirements.txt -t package
-cd package && zip -r ../package.zip . && cd ..
+cd src/back-end/bedrock-processor && \
+pip install -r requirements.txt -t package && \
+cd package && zip -r ../lambda_package.zip . && cd .. && \
 zip lambda_package.zip lambda_function.py
 ```
 
